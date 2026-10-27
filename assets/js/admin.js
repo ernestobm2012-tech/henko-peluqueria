@@ -13,7 +13,7 @@ const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', '
 const COLORS = ['#8E5CC9', '#D9A400', '#2FA36B', '#1483DC', '#E07A1F', '#B8325A'];
 
 let me = null, owner = false;
-let calendars = [], team = [], services = [];
+let calendars = [], team = [], services = [], coupons = [];
 
 // ---------- Utilidades de hora (siempre hora de España)
 const madridParts = (d) => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -47,7 +47,7 @@ function fail(err) { console.error(err); toast(err?.message?.includes('row-level
 const modal = $('#modal'), card = $('#modalCard');
 function openModal(html, onSave) {
   card.innerHTML = html;
-  modal.showModal();
+  if (!modal.open) modal.showModal();
   card.onsubmit = async (e) => {
     e.preventDefault();
     const btn = e.submitter;
@@ -98,6 +98,7 @@ async function loadBase() {
     db.from('team_members').select('id, name, job_title, bio, photo_url, show_on_web, active, sort, profile_id').eq('client_id', CID).order('sort').order('name'),
     db.from('services').select('*').eq('client_id', CID).order('sort').order('name'),
   ]);
+  coupons = (await db.from('coupons').select('*').eq('client_id', CID).order('created_at')).data || [];
   team = (t.data || []).filter((m) => !m.name.startsWith('[prueba'));
   calendars = (c.data || []).filter((cal) => team.some((m) => m.id === cal.member_id && m.active));
   services = (s.data || []).filter((x) => !x.name.startsWith('[prueba'));
@@ -111,7 +112,7 @@ function showTab(name) {
   $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $$('[data-view]').forEach((v) => (v.hidden = v.dataset.view !== name));
   history.replaceState(null, '', `#${name}`);
-  ({ agenda: renderAgenda, clientes: renderCustomers, servicios: renderServices, equipo: renderTeam, web: renderWeb, ajustes: renderSettings })[name]();
+  ({ agenda: renderAgenda, clientes: renderCustomers, numeros: renderNumbers, cupones: renderCoupons, servicios: renderServices, equipo: renderTeam, web: renderWeb, ajustes: renderSettings })[name]();
 }
 $$('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
@@ -129,7 +130,7 @@ setInterval(() => { if (!$('[data-view="agenda"]').hidden && !modal.open) render
 
 async function eventsBetween(fromDay, toDay) {
   const { data, error } = await db.from('calendar_events')
-    .select('id, calendar_id, title, description, starts_at, ends_at, all_day, source, service_id, customer_id, price_eur, customers(name, phone)')
+    .select('id, calendar_id, title, description, starts_at, ends_at, all_day, source, service_id, customer_id, price_eur, coupon_id, discount_eur, no_show, customers(name, phone)')
     .eq('client_id', CID).in('calendar_id', calendars.map((c) => c.id))
     .lt('starts_at', madridAt(addDays(toDay, 1), '00:00').toISOString()).gt('ends_at', madridAt(fromDay, '00:00').toISOString())
     .order('starts_at');
@@ -146,6 +147,7 @@ async function renderAgenda(quiet) {
     if (mode === 'dia') drawDay(await eventsBetween(day, day));
     else drawList(await eventsBetween(day, addDays(day, 6)));
     if (!quiet) drawStats();
+    drawWaitlist();
   } catch (err) { fail(err); }
 }
 
@@ -187,8 +189,8 @@ function drawDay(events) {
         const block = e.title.startsWith('Bloqueado');
         const who = e.customers?.name || e.title.split(' · ').slice(1).join(' · ');
         const what = block ? e.title : (services.find((s) => s.id === e.service_id)?.name || e.title.split(' · ')[0]);
-        return `<div class="ev ${block ? 'block' : e.source === 'web' ? 'web' : ''}" data-ev="${e.id}" style="top:${px(a)}px;height:${Math.max(22, px(b) - px(a) - 2)}px;left:calc(${(lane / n) * 100}% + 4px);right:auto;width:calc(${100 / n}% - 8px);border-left-color:${block ? '' : esc(c.color)}">
-          ${e.source === 'web' ? '<span class="tag">Web</span>' : ''}<b>${fmtMin(a)} ${esc(block ? what : who)}</b>${block ? '' : esc(what)}</div>`;
+        return `<div class="ev ${block ? 'block' : e.source === 'web' ? 'web' : ''}${e.no_show ? ' noshow' : ''}" data-ev="${e.id}" style="top:${px(a)}px;height:${Math.max(22, px(b) - px(a) - 2)}px;left:calc(${(lane / n) * 100}% + 4px);right:auto;width:calc(${100 / n}% - 8px);border-left-color:${block ? '' : esc(c.color)}">
+          ${e.no_show ? '<span class="tag">No vino</span>' : e.coupon_id ? '<span class="tag">Cupón</span>' : e.source === 'web' ? '<span class="tag">Web</span>' : ''}<b>${fmtMin(a)} ${esc(block ? what : who)}</b>${block ? '' : esc(what)}</div>`;
       }).join('')}
     </div>`;
   }).join('');
@@ -236,6 +238,21 @@ async function drawStats() {
   } catch { /* sin resumen */ }
 }
 
+// ---------- Lista de espera del día que se está viendo
+async function drawWaitlist() {
+  const box = $('#aWait');
+  const { data } = await db.from('waitlist').select('id, name, phone, email, notified_at, service_id, services(name)')
+    .eq('client_id', CID).eq('day', day).order('created_at');
+  const list = (data || []).filter((w) => !w.name.startsWith('[prueba'));
+  box.hidden = !list.length;
+  if (!list.length) return;
+  box.innerHTML = `<b>Lista de espera del ${esc(longDay(day))}</b> · si se libera un hueco, les llega un correo solo. También puedes escribirles tú:
+    <ul>${list.map((w) => `<li><span>${esc(w.name)} <span class="muted">${esc(phoneFmt(w.phone))}${w.services?.name ? ` · ${esc(w.services.name)}` : ''}${w.notified_at ? ' · ya avisada' : ''}</span></span>
+      <span><a class="btn line" target="_blank" href="${waLink(w.phone, `¡Hola ${w.name.split(' ')[0]}! Te escribimos de Henko: se nos ha quedado un hueco libre el ${longDay(day)}. ¿Te viene bien?`)}">WhatsApp</a>
+      <button class="btn" data-wdel="${w.id}" title="Quitar de la lista">×</button></span></li>`).join('')}</ul>`;
+  $$('[data-wdel]', box).forEach((b) => (b.onclick = async () => { await db.from('waitlist').delete().eq('id', b.dataset.wdel); drawWaitlist(); }));
+}
+
 // ---------- Cita: crear, cambiar, anular o bloquear un hueco
 async function eventModal(e) {
   const isNew = !e.id;
@@ -273,6 +290,8 @@ async function eventModal(e) {
       <input type="hidden" name="customer_id" value="${esc(cust?.id || '')}">
     </div>
     <label class="field"><span>Notas</span><textarea name="notes" rows="2">${esc(block ? e.title.replace(/^Bloqueado ?·? ?/, '') : notes)}</textarea></label>
+    <label class="field js-svc"><span>Cupón de descuento</span><select name="coupon_id"><option value="">Sin cupón</option>${coupons.filter((k) => k.active || k.id === e.coupon_id).map((k) => `<option value="${k.id}" ${k.id === e.coupon_id ? 'selected' : ''}>${esc(k.code)} · ${esc(couponText(k))}</option>`).join('')}</select></label>
+    ${!isNew && !block && new Date(e.starts_at) < new Date() ? `<label class="field check"><input type="checkbox" name="no_show" ${e.no_show ? 'checked' : ''}><span>No vino a la cita (no cuenta para pedirle opinión ni en las estadísticas de servicios hechos)</span></label>` : ''}
     <div class="modal-actions">
       ${isNew ? '' : '<button class="btn danger" value="delete">Anular</button>'}
       ${cust?.phone ? `<a class="btn line" target="_blank" href="${waLink(cust.phone, `¡Hola ${cust.name.split(' ')[0]}! Te escribimos de Henko por tu cita del ${longDay(dayV)} a las ${timeV}.`)}">WhatsApp</a>` : ''}
@@ -309,6 +328,10 @@ async function eventModal(e) {
       description: isBlock ? null : [cphone && `Teléfono: ${cphone}`, note && `Notas: ${note}`].filter(Boolean).join('\n') || null,
       service_id: isBlock ? null : svc?.id || null, customer_id: isBlock ? null : customerId, price_eur: isBlock ? null : svc?.price_eur ?? null,
     };
+    const cp = isBlock ? null : coupons.find((k) => k.id === fd.get('coupon_id'));
+    row.coupon_id = cp?.id || null;
+    row.discount_eur = cp && row.price_eur != null ? Math.min(row.price_eur, cp.kind === 'percent' ? Math.round(row.price_eur * cp.value) / 100 : Number(cp.value)) : null;
+    if (fd.has('no_show')) row.no_show = fd.get('no_show') === 'on';
     const { error } = isNew ? await db.from('calendar_events').insert({ ...row, source: 'panel' }) : await db.from('calendar_events').update(row).eq('id', e.id);
     if (error) throw error;
     if (customerId) await db.from('customers').update({ last_booking_at: new Date().toISOString() }).eq('id', customerId);
@@ -347,7 +370,7 @@ let customers = [];
 $('#cSearch').oninput = () => drawCustomers();
 $('#cNew').onclick = () => customerModal({});
 async function renderCustomers() {
-  const { data, error } = await db.from('customers').select('id, name, phone, email, notes, last_booking_at, preferred_member_id, created_at')
+  const { data, error } = await db.from('customers').select('id, name, phone, email, notes, last_booking_at, preferred_member_id, created_at, birthday, marketing_ok')
     .eq('client_id', CID).order('name').limit(2000);
   if (error) return fail(error);
   customers = (data || []).filter((c) => !c.name.startsWith('[prueba'));
@@ -363,32 +386,234 @@ function drawCustomers() {
 }
 async function customerModal(c) {
   const isNew = !c.id;
-  let history = [];
-  if (!isNew) history = (await db.from('calendar_events').select('starts_at, title, calendar_id').eq('customer_id', c.id).order('starts_at', { ascending: false }).limit(30)).data || [];
+  let history = [], records = [];
+  if (!isNew) {
+    [history, records] = await Promise.all([
+      db.from('calendar_events').select('starts_at, title, calendar_id, no_show, coupon_id').eq('customer_id', c.id).order('starts_at', { ascending: false }).limit(30).then((r) => r.data || []),
+      db.from('customer_records').select('id, kind, body, photo_path, member_id, created_at').eq('customer_id', c.id).order('created_at', { ascending: false }).limit(60).then((r) => r.data || []),
+    ]);
+  }
+  const visits = history.filter((h) => new Date(h.starts_at) < new Date() && !h.no_show).length;
+  const noShows = history.filter((h) => h.no_show).length;
   openModal(`
     <h2>${isNew ? 'Nueva clienta' : esc(c.name)}</h2>
+    ${isNew ? '' : `<p class="muted" style="margin-top:-6px">${visits} ${visits === 1 ? 'visita' : 'visitas'}${noShows ? ` · ${noShows} sin venir` : ''}${c.marketing_ok ? ' · <span class="tag-ok">acepta ofertas por correo</span>' : ''}</p>`}
     <div class="grid2">
       <label class="field"><span>Nombre</span><input name="name" value="${esc(c.name || '')}" required></label>
       <label class="field"><span>Teléfono</span><input name="phone" value="${esc(c.phone || '')}" inputmode="tel"></label>
     </div>
     <div class="grid2">
       <label class="field"><span>Correo</span><input name="email" type="email" value="${esc(c.email || '')}"></label>
-      <label class="field"><span>Le atiende normalmente</span><select name="preferred_member_id"><option value="">—</option>${team.filter((m) => m.active).map((m) => `<option value="${m.id}" ${m.id === c.preferred_member_id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Cumpleaños</span><input name="birthday" type="date" value="${esc(c.birthday || '')}"></label>
     </div>
-    <label class="field"><span>Notas (fórmulas de color, alergias, gustos…)</span><textarea name="notes" rows="3" placeholder="Ej.: tinte 6.1 + 20 vol, 35 min">${esc(c.notes || '')}</textarea></label>
-    ${isNew ? '' : `<h2 style="font-size:20px">Historial</h2><ul class="history">${history.map((h) => `<li>${new Date(h.starts_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} · ${esc(h.title)}</li>`).join('') || '<li class="muted">Sin citas todavía.</li>'}</ul>`}
+    <div class="grid2">
+      <label class="field"><span>Le atiende normalmente</span><select name="preferred_member_id"><option value="">—</option>${team.filter((m) => m.active).map((m) => `<option value="${m.id}" ${m.id === c.preferred_member_id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+      <label class="field check" style="align-self:end"><input type="checkbox" name="marketing_ok" ${c.marketing_ok ? 'checked' : ''}><span>Me ha dicho que quiere recibir ofertas por correo</span></label>
+    </div>
+    <label class="field"><span>Notas (alergias, gustos…)</span><textarea name="notes" rows="2">${esc(c.notes || '')}</textarea></label>
+    ${isNew ? '' : `
+    <h3 class="sub">Ficha técnica</h3>
+    <div class="rec-form">
+      <select name="rkind"><option value="color">Fórmula de color</option><option value="nota">Nota del servicio</option><option value="foto">Foto</option></select>
+      <input name="rbody" placeholder="Ej.: raíz 6.1 + 20 vol, 35 min · medios 7.13 + 10 vol">
+    </div>
+    <div class="rec-form"><label class="btn line" style="justify-content:center">Añadir fotos<input type="file" name="rphoto" accept="image/*" multiple hidden></label><button class="btn solid" value="record">Guardar en la ficha</button></div>
+    <ul class="records" id="records">${records.map((r) => `<li data-r="${r.id}"><span class="meta">${new Date(r.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} · ${{ color: 'Color', nota: 'Nota', foto: 'Foto' }[r.kind]}${r.member_id ? ` · ${esc(team.find((m) => m.id === r.member_id)?.name?.split(' ')[0] || '')}` : ''}</span>
+      ${r.body ? `<div>${esc(r.body)}</div>` : ''}${r.photo_path ? `<img data-photo="${esc(r.photo_path)}" alt="">` : ''}</li>`).join('') || '<li class="muted">Aún no hay nada. Apunta aquí las fórmulas de color y sube fotos del antes y el después.</li>'}</ul>
+    <h3 class="sub">Citas</h3><ul class="history">${history.map((h) => `<li>${new Date(h.starts_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} · ${esc(h.title)}${h.no_show ? ' · <b>no vino</b>' : ''}${h.coupon_id ? ' · con cupón' : ''}</li>`).join('') || '<li class="muted">Sin citas todavía.</li>'}</ul>`}
     <div class="modal-actions">
       ${!isNew && c.phone ? `<a class="btn line" target="_blank" href="${waLink(c.phone, `¡Hola ${c.name.split(' ')[0]}! Te escribimos de Henko.`)}">WhatsApp</a><a class="btn line" href="tel:${esc(c.phone)}">Llamar</a>` : ''}
       <div class="right"><button class="btn" value="cancel" formnovalidate>Cerrar</button><button class="btn solid" value="save">Guardar</button></div>
-    </div>`, async (fd) => {
+    </div>`, async (fd, action) => {
+    if (action === 'record') {
+      const files = fd.getAll('rphoto').filter((f) => f && f.size);
+      const body = String(fd.get('rbody') || '').trim();
+      if (!body && !files.length) { toast('Escribe algo o elige una foto.'); return false; }
+      const mine = team.find((m) => m.profile_id === me.id)?.id || null;
+      if (!files.length) {
+        const { error } = await db.from('customer_records').insert({ client_id: CID, customer_id: c.id, kind: fd.get('rkind') === 'foto' ? 'nota' : fd.get('rkind'), body, member_id: mine });
+        if (error) throw error;
+      }
+      for (const [k, file] of files.entries()) {
+        if (file.size > 10 * 1024 * 1024) { toast(`${file.name} pesa más de 10 MB`); continue; }
+        const path = `${CID}/${c.id}/${Date.now()}-${k}.${(file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`;
+        const up = await db.storage.from('customer-photos').upload(path, file, { contentType: file.type });
+        if (up.error) throw up.error;
+        const { error } = await db.from('customer_records').insert({ client_id: CID, customer_id: c.id, kind: 'foto', body: k ? null : body || null, photo_path: path, member_id: mine });
+        if (error) throw error;
+      }
+      toast('Guardado en la ficha');
+      customerModal(c);
+      return false;
+    }
+    const marketing = fd.get('marketing_ok') === 'on';
     const row = {
       name: fd.get('name').trim(), phone: fd.get('phone').replace(/[^\d+]/g, '') || null, email: fd.get('email').trim() || null,
       notes: fd.get('notes').trim() || null, preferred_member_id: fd.get('preferred_member_id') || null,
+      birthday: fd.get('birthday') || null, marketing_ok: marketing,
+      ...(marketing && !c.marketing_ok ? { marketing_ok_at: new Date().toISOString() } : {}),
     };
     const { error } = isNew ? await db.from('customers').insert({ ...row, client_id: CID }) : await db.from('customers').update(row).eq('id', c.id);
     if (error) throw error.code === '23505' ? new Error('Ya hay una clienta con ese teléfono.') : error;
     toast('Guardado'); renderCustomers();
   });
+  // Fotos de la ficha: almacén privado, con enlaces que caducan.
+  const imgs = $$('#records img[data-photo]', card);
+  if (imgs.length) {
+    const { data } = await db.storage.from('customer-photos').createSignedUrls(imgs.map((i) => i.dataset.photo), 3600);
+    (data || []).forEach((d, i) => { if (d.signedUrl) { imgs[i].src = d.signedUrl; imgs[i].onclick = () => window.open(d.signedUrl, '_blank'); } });
+  }
+}
+
+// =====================================================================
+// CUPONES
+// =====================================================================
+const couponText = (k) => k.kind === 'percent' ? `${Number(k.value).toLocaleString('es-ES')} % de descuento` : `${Number(k.value).toLocaleString('es-ES')} € de descuento`;
+const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+$('#kNew').onclick = () => couponModal({ kind: 'percent', value: 10, once_per_customer: true, active: true, service_ids: [] });
+async function renderCoupons() {
+  coupons = (await db.from('coupons').select('*').eq('client_id', CID).order('created_at')).data || [];
+  const { data: used } = await db.from('calendar_events').select('coupon_id').eq('client_id', CID).not('coupon_id', 'is', null);
+  const uses = {}; (used || []).forEach((u) => (uses[u.coupon_id] = (uses[u.coupon_id] || 0) + 1));
+  const today = isoDay(new Date());
+  $('#kList').innerHTML = coupons.map((k) => {
+    const expired = k.valid_until && k.valid_until < today;
+    const rules = [k.service_ids?.length ? `solo ${k.service_ids.map((id) => services.find((s) => s.id === id)?.name).filter(Boolean).join(', ')}` : 'todos los servicios',
+      k.new_customers_only && 'solo primera visita', k.once_per_customer && 'una vez por clienta',
+      k.valid_until && `hasta el ${shortDate(k.valid_until)}`, k.max_uses && `máximo ${k.max_uses} usos`].filter(Boolean).join(' · ');
+    return `<div class="coupon-card ${k.active && !expired ? '' : 'off'}" data-id="${k.id}"><span class="code">${esc(k.code)}</span>
+      <div>${esc(k.title || couponText(k))}<small>${esc(couponText(k))} · ${esc(rules)}${k.show_on_web ? ' · se ve en la web' : ''}${!k.active ? ' · desactivado' : expired ? ' · caducado' : ''}</small></div>
+      <span class="pill">${uses[k.id] || 0} ${uses[k.id] === 1 ? 'uso' : 'usos'}</span></div>`;
+  }).join('') || '<p class="muted">Aún no hay cupones.</p>';
+  $$('#kList [data-id]').forEach((el) => (el.onclick = () => couponModal(coupons.find((k) => k.id === el.dataset.id))));
+}
+function couponModal(k) {
+  const isNew = !k.id;
+  openModal(`
+    <h2>${isNew ? 'Nuevo cupón' : `Cupón ${esc(k.code)}`}</h2>
+    <div class="grid2">
+      <label class="field"><span>Código (lo que escriben)</span><input name="code" value="${esc(k.code || '')}" required maxlength="20" placeholder="OTONO15" style="text-transform:uppercase;letter-spacing:.1em"></label>
+      <label class="field"><span>Nombre para la web</span><input name="title" value="${esc(k.title || '')}" placeholder="Otoño en Henko"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Tipo</span><select name="kind"><option value="percent" ${k.kind === 'percent' ? 'selected' : ''}>Porcentaje (%)</option><option value="fixed" ${k.kind === 'fixed' ? 'selected' : ''}>Euros (€)</option></select></label>
+      <label class="field"><span>Descuento</span><input name="value" type="number" min="1" step="0.5" value="${k.value ?? ''}" required></label>
+    </div>
+    <div class="grid3">
+      <label class="field"><span>Desde</span><input name="valid_from" type="date" value="${esc(k.valid_from || '')}"></label>
+      <label class="field"><span>Hasta</span><input name="valid_until" type="date" value="${esc(k.valid_until || '')}"></label>
+      <label class="field"><span>Usos máximos</span><input name="max_uses" type="number" min="1" value="${k.max_uses ?? ''}" placeholder="Sin límite"></label>
+    </div>
+    <div class="field"><span>¿Para qué servicios?</span>${services.filter((s) => s.active && s.bookable).map((s) => `<label class="field check" style="margin:0"><input type="checkbox" name="svc" value="${s.id}" ${k.service_ids?.includes(s.id) ? 'checked' : ''}><span>${esc(s.name)}</span></label>`).join('')}<small class="muted">Si no marcas ninguno, vale para todos.</small></div>
+    <label class="field check"><input type="checkbox" name="once_per_customer" ${k.once_per_customer ? 'checked' : ''}><span>Cada clienta solo puede usarlo una vez</span></label>
+    <label class="field check"><input type="checkbox" name="new_customers_only" ${k.new_customers_only ? 'checked' : ''}><span>Solo para clientas nuevas (primera visita)</span></label>
+    <label class="field check"><input type="checkbox" name="show_on_web" ${k.show_on_web ? 'checked' : ''}><span>Enseñarlo en la portada de la web</span></label>
+    <label class="field check"><input type="checkbox" name="active" ${k.active ? 'checked' : ''}><span>Activo</span></label>
+    <div class="modal-actions">${isNew ? '' : '<button class="btn danger" value="delete">Borrar</button>'}<div class="right"><button class="btn" value="cancel" formnovalidate>Cerrar</button><button class="btn solid" value="save">Guardar</button></div></div>`,
+  async (fd, action) => {
+    if (action === 'delete') {
+      if (!confirm('¿Borrar este cupón? Las citas que ya lo usaron lo pierden. Si solo quieres pararlo, desmarca «Activo».')) return false;
+      const { error } = await db.from('coupons').delete().eq('id', k.id); if (error) throw error;
+    } else {
+      const code = String(fd.get('code')).toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      if (code.length < 3) throw new Error('El código necesita al menos 3 letras o números (sin espacios ni tildes).');
+      const row = {
+        code, title: String(fd.get('title')).trim() || null, kind: fd.get('kind'), value: Number(fd.get('value')),
+        valid_from: fd.get('valid_from') || null, valid_until: fd.get('valid_until') || null, max_uses: Number(fd.get('max_uses')) || null,
+        service_ids: fd.getAll('svc'), once_per_customer: fd.get('once_per_customer') === 'on', new_customers_only: fd.get('new_customers_only') === 'on',
+        show_on_web: fd.get('show_on_web') === 'on', active: fd.get('active') === 'on',
+      };
+      if (row.kind === 'percent' && row.value > 100) throw new Error('Un porcentaje no puede pasar de 100.');
+      const { error } = isNew ? await db.from('coupons').insert({ ...row, client_id: CID }) : await db.from('coupons').update(row).eq('id', k.id);
+      if (error) throw error.code === '23505' ? new Error('Ya hay un cupón con ese código.') : error;
+    }
+    toast('Guardado'); renderCoupons();
+  });
+}
+
+// =====================================================================
+// NÚMEROS: cómo va el salón
+// =====================================================================
+let nRange = 'mes';
+$$('#nRange button').forEach((b) => (b.onclick = () => { nRange = b.dataset.r; $$('#nRange button').forEach((x) => x.classList.toggle('on', x === b)); renderNumbers(); }));
+function rangeOf(r) {
+  const today = isoDay(new Date()), m0 = `${today.slice(0, 8)}01`;
+  const monthsBack = (iso, n) => { const [y, m] = iso.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 - n, 1)); return d.toISOString().slice(0, 10); };
+  if (r === 'anterior') return [monthsBack(m0, 1), addDays(m0, -1)];
+  if (r === '3m') return [monthsBack(m0, 2), today];
+  if (r === '12m') return [monthsBack(m0, 11), today];
+  return [m0, today];
+}
+const eur = (n) => `${Math.round(n).toLocaleString('es-ES')} €`;
+const bars = (rows, fmt = (v) => v) => {
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  return `<div class="bars">${rows.map(([label, v]) => `<div class="bar-row"><span>${esc(label)}</span><span class="track"><span class="fill" style="width:${(v / max) * 100}%"></span></span><span class="v">${fmt(v)}</span></div>`).join('') || '<p class="muted">Sin datos todavía.</p>'}</div>`;
+};
+async function renderNumbers() {
+  const [from, to] = rangeOf(nRange);
+  const fromTs = madridAt(from, '00:00').toISOString(), toTs = madridAt(addDays(to, 1), '00:00').toISOString();
+  $('#nBody').innerHTML = '<p class="muted">Calculando…</p>';
+  try {
+    const [ev, cus, all, wl, msg] = await Promise.all([
+      db.from('calendar_events').select('id, calendar_id, starts_at, ends_at, title, source, service_id, customer_id, price_eur, discount_eur, coupon_id, no_show')
+        .eq('client_id', CID).gte('starts_at', fromTs).lt('starts_at', toTs).limit(5000),
+      db.from('customers').select('id, name, phone, created_at, marketing_ok').eq('client_id', CID).limit(5000),
+      db.from('calendar_events').select('customer_id, starts_at, no_show').eq('client_id', CID).not('customer_id', 'is', null).limit(10000),
+      db.from('waitlist').select('id', { count: 'exact', head: true }).eq('client_id', CID).gte('created_at', fromTs).lt('created_at', toTs),
+      db.from('message_log').select('kind').eq('client_id', CID).eq('ok', true).gte('created_at', fromTs).lt('created_at', toTs),
+    ]);
+    const events = (ev.data || []).filter((e) => !e.title.startsWith('Bloqueado') && !e.title.includes('[prueba'));
+    const done = events.filter((e) => !e.no_show && new Date(e.starts_at) < new Date());
+    const upcoming = events.filter((e) => new Date(e.starts_at) >= new Date());
+    const noShow = events.filter((e) => e.no_show).length;
+    const revenue = done.reduce((t, e) => t + (Number(e.price_eur) || 0) - (Number(e.discount_eur) || 0), 0);
+    const priced = done.filter((e) => e.price_eur != null).length;
+    const web = events.filter((e) => e.source === 'web').length, chat = events.filter((e) => e.source === 'chat' || e.source === 'agent').length;
+    const customers = (cus.data || []).filter((c) => !c.name.startsWith('['));
+    const newOnes = customers.filter((c) => c.created_at >= fromTs && c.created_at < toTs).length;
+    // Clientas que repiten y las que llevan tiempo sin venir
+    const visits = {}; const last = {}; const future = new Set();
+    (all.data || []).forEach((e) => {
+      if (e.no_show) return;
+      const t = new Date(e.starts_at).getTime();
+      if (t > Date.now()) future.add(e.customer_id);
+      else { visits[e.customer_id] = (visits[e.customer_id] || 0) + 1; last[e.customer_id] = Math.max(last[e.customer_id] || 0, t); }
+    });
+    const inRange = new Set(done.map((e) => e.customer_id).filter(Boolean));
+    const repeat = [...inRange].filter((id) => visits[id] > 1).length;
+    const asleep = customers.filter((c) => last[c.id] && !future.has(c.id) && Date.now() - last[c.id] > 56 * 86_400_000)
+      .sort((a, b) => last[b.id] - last[a.id]).slice(0, 30);
+    // Servicios y ocupación por persona
+    const bySvc = {}; done.forEach((e) => { const n = services.find((s) => s.id === e.service_id)?.name || e.title.split(' · ')[0]; bySvc[n] = (bySvc[n] || 0) + 1; });
+    const occ = calendars.map((c) => {
+      let open = 0;
+      for (let d = from; d <= to; d = addDays(d, 1)) (c.booking_hours?.[String(weekday(d))] || []).forEach((r) => { const [a, b] = r.replace(/\s/g, '').split('-').map(toMin); open += b - a; });
+      const busy = events.filter((e) => e.calendar_id === c.id && !e.no_show).reduce((t, e) => t + (new Date(e.ends_at) - new Date(e.starts_at)) / 60000, 0);
+      return [memberOf(c)?.name || c.name, open ? Math.min(100, Math.round((busy / open) * 100)) : 0];
+    });
+    const sources = [['Web', web], ['Asistente del chat', chat], ['En el salón / teléfono', events.length - web - chat]];
+    const msgCount = {}; (msg.data || []).forEach((m) => (msgCount[m.kind] = (msgCount[m.kind] || 0) + 1));
+    const coupUsed = events.filter((e) => e.coupon_id).length;
+    $('#nBody').innerHTML = `
+      <div class="kpis">
+        <div class="kpi"><b>${done.length}</b>citas hechas<small>${upcoming.length} más por venir</small></div>
+        <div class="kpi"><b>${priced ? eur(revenue) : '—'}</b>facturado<small>${priced ? (priced < done.length ? `de ${priced} citas con precio` : 'según los precios') : 'pon precios en Servicios'}</small></div>
+        <div class="kpi"><b>${web}</b>reservas en la web<small>${events.length ? Math.round((web / events.length) * 100) : 0} % del total</small></div>
+        <div class="kpi"><b>${newOnes}</b>clientas nuevas<small>${repeat} repiten</small></div>
+        <div class="kpi"><b>${noShow}</b>no vinieron<small>${events.length ? Math.round((noShow / events.length) * 100) : 0} % de las citas</small></div>
+        <div class="kpi"><b>${coupUsed}</b>cupones usados<small>${wl.count || 0} en lista de espera</small></div>
+      </div>
+      <div class="cols2">
+        <div class="panel"><h2>Lo que más se pide</h2>${bars(Object.entries(bySvc).sort((a, b) => b[1] - a[1]).slice(0, 8))}</div>
+        <div class="panel"><h2>Ocupación de cada agenda</h2>${bars(occ, (v) => `${v} %`)}<p class="muted" style="margin-top:10px">Horas con cita sobre las horas de su horario.</p></div>
+        <div class="panel"><h2>Cómo reservan</h2>${bars(sources)}</div>
+        <div class="panel"><h2>Correos que han salido</h2>${bars([['Confirmaciones', msgCount.confirm || 0], ['Recordatorios', msgCount.reminder || 0], ['Peticiones de opinión', msgCount.review || 0], ['Te echamos de menos', msgCount.comeback || 0], ['Cumpleaños', msgCount.birthday || 0], ['Huecos liberados', msgCount.waitlist || 0]])}</div>
+      </div>
+      <div class="panel"><h2>Hace más de 8 semanas que no vienen</h2>
+        <p class="muted">Un mensaje a tiempo las trae de vuelta. ${asleep.length ? 'Escríbeles desde aquí:' : ''}</p>
+        <ul class="history" style="max-height:none">${asleep.map((c) => `<li style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span>${esc(c.name)} <span class="muted">· última vez ${new Date(last[c.id]).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}${c.marketing_ok ? ' · le llega el correo solo' : ''}</span></span>${c.phone ? `<a class="btn line" target="_blank" href="${waLink(c.phone, `¡Hola ${c.name.split(' ')[0]}! Hace tiempo que no te vemos por Henko. ¿Te hacemos un hueco esta semana?`)}">WhatsApp</a>` : ''}</li>`).join('') || '<li class="muted">Nadie, ¡bien!</li>'}</ul>
+      </div>`;
+  } catch (err) { fail(err); }
 }
 
 // =====================================================================
@@ -608,8 +833,39 @@ async function renderSettings() {
   const f = $('#bookSettings');
   f.booking_days_ahead.value = settings.booking_days_ahead ?? 60;
   f.cancel_hours.value = settings.cancel_hours ?? 2;
+  if (owner) drawMessages();
   pushState();
 }
+
+// ---- Correos automáticos a las clientas
+const KINDS = { confirm: 'Confirmación', reminder: 'Recordatorio', review: 'Opinión en Google', comeback: 'Te echamos de menos', birthday: 'Cumpleaños', waitlist: 'Hueco liberado' };
+async function drawMessages() {
+  const f = $('#msgSettings'), m = settings.messages || {};
+  ['reminder', 'review', 'comeback', 'birthday'].forEach((k) => (f[k].checked = settings.messages ? m[k] !== false : false));
+  f.comeback_weeks.value = m.comeback_weeks || 7;
+  f.review_url.value = settings.review_url || '';
+  f.email.value = settings.email || '';
+  coupons = (await db.from('coupons').select('*').eq('client_id', CID).order('created_at')).data || [];
+  const opts = (sel) => `<option value="">Sin cupón</option>${coupons.filter((k) => k.active).map((k) => `<option value="${esc(k.code)}" ${k.code === sel ? 'selected' : ''}>${esc(k.code)} · ${esc(couponText(k))}</option>`).join('')}`;
+  f.comeback_coupon.innerHTML = opts(m.comeback_coupon);
+  f.birthday_coupon.innerHTML = opts(m.birthday_coupon);
+  const { data } = await db.from('message_log').select('kind, to_email, ok, created_at, customers(name)').eq('client_id', CID).order('created_at', { ascending: false }).limit(25);
+  $('#msgLog').innerHTML = (data || []).map((r) => `<li>${new Date(r.created_at).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${esc(KINDS[r.kind] || r.kind)} · ${esc(r.customers?.name || r.to_email || '')}${r.ok ? '' : ' · <b>no salió</b>'}</li>`).join('') || '<li class="muted">Todavía no ha salido ninguno.</li>';
+}
+$('#msgSettings').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const data = {
+    ...settings, review_url: f.review_url.value.trim(), email: f.email.value.trim(),
+    messages: {
+      reminder: f.reminder.checked, review: f.review.checked, comeback: f.comeback.checked, birthday: f.birthday.checked,
+      comeback_weeks: Number(f.comeback_weeks.value) || 7, comeback_coupon: f.comeback_coupon.value || null, birthday_coupon: f.birthday_coupon.value || null,
+    },
+  };
+  const { error } = await db.from('site_settings').upsert({ client_id: CID, data });
+  if (error) return fail(error);
+  settings = data; toast('Guardado');
+};
 $('#bookSettings').onsubmit = async (e) => {
   e.preventDefault();
   const data = { ...settings, booking_days_ahead: Number(e.target.booking_days_ahead.value) || 60, cancel_hours: Number(e.target.cancel_hours.value) || 0 };

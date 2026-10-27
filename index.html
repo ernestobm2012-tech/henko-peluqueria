@@ -14,7 +14,7 @@
   <link rel="preload" href="assets/fonts/CormorantGaramond-400-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/Jost-300-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/site.css?v=1">
+  <link rel="stylesheet" href="assets/css/site.css?v=2">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -59,6 +59,7 @@
           <a class="btn btn-line js-wa" href="https://wa.me/34608857984" target="_blank" rel="noopener">Escribir por WhatsApp</a>
         </div>
         <p class="open-now" id="openNow" aria-live="polite"></p>
+        <a class="promo js-promo" href="#reservar" hidden></a>
       </div>
       <div class="hero-art" aria-hidden="true">
         <figure class="arch"><img data-photo="local-2.jpg" alt="" fetchpriority="high"></figure>
@@ -118,6 +119,7 @@
         <p class="eyebrow">Reserva online</p>
         <h2>Pide tu cita</h2>
         <p>Ves los huecos libres de verdad y en un minuto queda apuntada. Te esperamos.</p>
+        <a class="promo js-promo" href="#reservar" hidden></a>
       </header>
       <div class="book-card" id="book">
         <ol class="book-steps" aria-hidden="true">
@@ -145,6 +147,20 @@
             <button class="days-arrow" id="bMore" aria-label="Más días">›</button>
           </div>
           <div class="times" id="bTimes" aria-live="polite"></div>
+          <p class="wait-link" id="bWaitLink" hidden><button type="button" class="link" id="bWaitOpen">¿No te viene ninguna hora? Avísame si se libera un hueco este día</button></p>
+          <p class="wait-done" id="bWaitDone" hidden></p>
+          <form class="wait" id="bWait" hidden novalidate>
+            <p class="book-note" id="bWaitText"></p>
+            <div class="grid2">
+              <label class="field"><span>Nombre</span><input name="name" autocomplete="name" maxlength="80" required></label>
+              <label class="field"><span>Teléfono</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" required placeholder="600 000 000"></label>
+            </div>
+            <label class="field"><span>Correo <small>(te avisamos aquí)</small></span><input name="email" type="email" autocomplete="email" maxlength="120" required></label>
+            <label class="hp" aria-hidden="true">Web <input name="website" tabindex="-1" autocomplete="off"></label>
+            <label class="check"><input type="checkbox" name="ok" required> <span>Acepto la <a href="privacidad.html" target="_blank">política de privacidad</a> para que me aviséis.</span></label>
+            <p class="book-error" id="bWaitError" role="alert" hidden></p>
+            <div class="book-nav"><button type="button" class="btn btn-ghost" id="bWaitClose">Cancelar</button><button class="btn btn-solid" id="bWaitSend">Avisadme</button></div>
+          </form>
           <div class="book-nav"><button class="btn btn-ghost" data-back="1">Atrás</button><button class="btn btn-solid" id="bNext2" disabled>Continuar</button></div>
         </div>
 
@@ -156,8 +172,14 @@
           </div>
           <label class="field"><span>Correo <small>(si quieres)</small></span><input name="email" type="email" autocomplete="email" maxlength="120"></label>
           <label class="field"><span>¿Algo que debamos saber? <small>(si quieres)</small></span><textarea name="notes" rows="2" maxlength="500" placeholder="Por ejemplo: vengo con el pelo largo, o es para una boda"></textarea></label>
+          <div class="field coupon">
+            <span>¿Tienes un código de descuento?</span>
+            <div class="coupon-row"><input name="coupon" autocomplete="off" maxlength="20" placeholder="Escríbelo aquí"><button type="button" class="btn btn-line" id="bCouponApply">Aplicar</button></div>
+            <p class="coupon-msg" id="bCouponMsg" aria-live="polite" hidden></p>
+          </div>
           <label class="hp" aria-hidden="true">Web <input name="website" tabindex="-1" autocomplete="off"></label>
           <label class="check"><input type="checkbox" name="ok" required> <span>He leído la <a href="privacidad.html" target="_blank">política de privacidad</a> y acepto que Henko use mis datos para gestionar la cita.</span></label>
+          <label class="check"><input type="checkbox" name="marketing"> <span>Quiero recibir por correo ofertas y detalles de Henko (como un regalo por mi cumpleaños). Puedo darme de baja cuando quiera.</span></label>
           <p class="book-error" id="bError" role="alert" hidden></p>
           <div class="book-nav"><button type="button" class="btn btn-ghost" data-back="2">Atrás</button><button class="btn btn-solid" id="bSubmit">Confirmar cita</button></div>
         </form>
@@ -169,7 +191,7 @@
             <a class="btn btn-solid" id="bIcs" download="cita-henko.ics">Añadir a mi calendario</a>
             <a class="btn btn-line" id="bManage" target="_blank">Ver o anular la cita</a>
           </div>
-          <p class="small">Guarda el enlace «Ver o anular la cita» por si te surge algo. Si necesitas cambiarla, escríbenos por WhatsApp.</p>
+          <p class="small" id="bDoneNote">Guarda el enlace «Ver o anular la cita» por si te surge algo. Si necesitas cambiarla, escríbenos por WhatsApp.</p>
           <button class="link" id="bAgain">Reservar otra cita</button>
         </div>
       </div>
@@ -230,7 +252,7 @@
   </div>
 
   <script src="assets/js/config.js?v=1"></script>
-  <script src="assets/js/site.js?v=1" defer></script>
+  <script src="assets/js/site.js?v=2" defer></script>
   <script src="https://ebmagenciaia.es/js/chat.js?v=4" data-client="henko-peluqueria" data-title="Henko" data-color="#684C33" data-privacy="privacidad.html" defer></script>
 </body>
 </html>

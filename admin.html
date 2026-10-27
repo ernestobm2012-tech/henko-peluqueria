@@ -10,7 +10,7 @@
   <link rel="manifest" href="admin.webmanifest">
   <link rel="apple-touch-icon" href="assets/img/icon-192.png">
   <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/admin.css?v=1">
+  <link rel="stylesheet" href="assets/css/admin.css?v=2">
 </head>
 <body>
   <!-- Entrada -->
@@ -32,6 +32,8 @@
       <nav class="tabs" id="tabs">
         <button data-tab="agenda" class="on">Agenda</button>
         <button data-tab="clientes">Clientes</button>
+        <button data-tab="numeros" data-owner>Números</button>
+        <button data-tab="cupones" data-owner>Cupones</button>
         <button data-tab="servicios" data-owner>Servicios</button>
         <button data-tab="equipo" data-owner>Equipo</button>
         <button data-tab="web" data-owner>Web</button>
@@ -54,6 +56,7 @@
           <button class="btn solid" id="aNew">+ Nueva cita</button>
         </div>
         <div class="stats" id="aStats"></div>
+        <div class="waitbox" id="aWait" hidden></div>
         <div class="agenda" id="agenda"></div>
         <div class="list" id="agendaList" hidden></div>
       </section>
@@ -66,6 +69,25 @@
           <button class="btn solid" id="cNew">+ Nueva clienta</button>
         </div>
         <div class="table" id="cList"></div>
+      </section>
+
+      <!-- Números -->
+      <section data-view="numeros" hidden>
+        <div class="view-head">
+          <h1>Cómo va el salón</h1>
+          <div class="seg" id="nRange"><button data-r="mes" class="on">Este mes</button><button data-r="anterior">Mes pasado</button><button data-r="3m">3 meses</button><button data-r="12m">12 meses</button></div>
+        </div>
+        <div id="nBody"><p class="muted">Calculando…</p></div>
+      </section>
+
+      <!-- Cupones -->
+      <section data-view="cupones" hidden>
+        <div class="view-head">
+          <h1>Cupones de descuento</h1>
+          <button class="btn solid" id="kNew">+ Nuevo cupón</button>
+        </div>
+        <p class="muted">Tus clientas escriben el código al reservar en la web. Puedes enseñar uno en la portada, ponerlo en los correos de cumpleaños o de «te echamos de menos» (en Ajustes) o darlo tú en mano o por Instagram.</p>
+        <div id="kList"></div>
       </section>
 
       <!-- Servicios -->
@@ -120,6 +142,27 @@
           <p class="muted" id="pushState"></p>
         </div>
         <div class="panel" data-owner>
+          <h2>Correos a tus clientas</h2>
+          <p class="muted">Salen solos, con tu nombre, a quien dejó su correo. Las ofertas (cumpleaños y «te echamos de menos») solo a quien marcó que quiere recibirlas.</p>
+          <form id="msgSettings">
+            <label class="field check"><input type="checkbox" checked disabled><span><b>Confirmación</b> al reservar en la web, con el enlace para ver o anular la cita.</span></label>
+            <label class="field check"><input type="checkbox" name="reminder"><span><b>Recordatorio</b> el día antes de la cita (menos plantones).</span></label>
+            <label class="field check"><input type="checkbox" name="review"><span><b>Pedir opinión en Google</b> unas horas después de la cita (como mucho una vez cada 3 meses por clienta).</span></label>
+            <label class="field"><span>Enlace para dejar opinión en Google <small>(si lo dejas vacío, se abre tu ficha en Google Maps)</small></span><input name="review_url" placeholder="https://g.page/r/…/review"></label>
+            <div class="grid2">
+              <label class="field check"><input type="checkbox" name="comeback"><span><b>Te echamos de menos</b> a quien lleva tiempo sin venir.</span></label>
+              <label class="field"><span>A las cuántas semanas</span><input name="comeback_weeks" type="number" min="3" max="52"></label>
+            </div>
+            <label class="field"><span>Cupón para «te echamos de menos»</span><select name="comeback_coupon"></select></label>
+            <label class="field check"><input type="checkbox" name="birthday"><span><b>Felicitación de cumpleaños</b> (si sabes su fecha; se apunta en la ficha de la clienta).</span></label>
+            <label class="field"><span>Cupón de cumpleaños</span><select name="birthday_coupon"></select></label>
+            <label class="field"><span>Correo donde te llegan las respuestas</span><input name="email" type="email" placeholder="tucorreo@gmail.com"></label>
+            <button class="btn solid">Guardar</button>
+          </form>
+          <h3 class="sub">Últimos correos enviados</h3>
+          <div id="msgLog" class="history"></div>
+        </div>
+        <div class="panel" data-owner>
           <h2>Reservas desde la web</h2>
           <form id="bookSettings" class="grid2">
             <label class="field"><span>Se puede reservar hasta (días)</span><input name="booking_days_ahead" type="number" min="7" max="180"></label>
@@ -139,6 +182,6 @@
   <div class="toast" id="toast" role="status" hidden></div>
 
   <script src="assets/js/config.js?v=1"></script>
-  <script type="module" src="assets/js/admin.js?v=1"></script>
+  <script type="module" src="assets/js/admin.js?v=2"></script>
 </body>
 </html>

@@ -48,6 +48,7 @@
   post({ action: 'info' }).then((info) => {
     INFO = info;
     applySettings(info.settings || {});
+    renderPromos(info.promos || []);
     renderServices();
     renderGallery();
     renderTeam();
@@ -111,6 +112,16 @@
       const d = ((wd - 1 + i) % 7) + 1, r = ranges(d)[0];
       if (r) { el.textContent = `Cerrado ahora · abrimos ${i === 1 ? 'mañana' : `el ${DAY[d % 7]}`} a las ${fmt(r[0])}`; return; }
     }
+  }
+
+  // ---- Promociones visibles en la web (cupones marcados para enseñarse)
+  const couponLabel = (c) => c.kind === 'percent' ? `${Number(c.value).toLocaleString('es-ES')} %` : euros(c.value);
+  function renderPromos(promos) {
+    const p = promos[0];
+    $$('.js-promo').forEach((el) => {
+      el.hidden = !p;
+      if (p) el.innerHTML = `${esc(p.title || 'Promoción')}: ${couponLabel(p)} de descuento con el código <b>${esc(p.code)}</b>`;
+    });
   }
 
   // ---- Servicios
@@ -233,6 +244,13 @@
   const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date());
   const addDays = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
   const DAYS_SHOWN = 14;
+  // Días que el salón abre (los domingos, por ejemplo, ni se ofrecen)
+  const isOpenDay = (iso) => {
+    const o = INFO.settings.opening;
+    if (!o) return true;
+    const wd = new Date(`${iso}T12:00:00`).getDay() || 7;
+    return (o[String(wd)] || []).length > 0;
+  };
 
   $('#bNext1').onclick = () => { state.from = todayIso(); state.day = null; state.time = null; go(2); loadSlots(); };
   $('#bMore').onclick = () => { state.from = addDays(state.from, DAYS_SHOWN); loadSlots(); };
@@ -245,6 +263,7 @@
   }
 
   async function loadSlots() {
+    closeWait();
     $('#bSum2').innerHTML = summary();
     $('#bPrev').disabled = state.from <= todayIso();
     $('#bDays').innerHTML = '<div class="skeleton" style="grid-column: 1 / -1"></div>';
@@ -265,14 +284,15 @@
     const days = state.slots || [];
     $('#bDays').innerHTML = days.map((d) => {
       const dt = new Date(`${d.date}T12:00:00`);
-      return `<button role="option" data-d="${d.date}" ${d.slots.length ? '' : 'disabled'} aria-selected="${d.date === state.day}">
+      return `<button role="option" data-d="${d.date}" class="${d.slots.length ? '' : 'full'}" aria-selected="${d.date === state.day}" ${isOpenDay(d.date) ? '' : 'disabled'}>
         ${DAY[dt.getDay()].slice(0, 3)}<b>${dt.getDate()}</b>${MONTH[dt.getMonth()]}</button>`;
     }).join('');
-    $$('#bDays button').forEach((b) => b.onclick = () => { state.day = b.dataset.d; state.time = null; renderDays(); });
+    $$('#bDays button').forEach((b) => b.onclick = () => { state.day = b.dataset.d; state.time = null; closeWait(); renderDays(); });
     if (!state.day) {
-      const first = days.find((d) => d.slots.length);
+      const first = days.find((d) => d.slots.length) || days.find((d) => isOpenDay(d.date));
       if (first) { state.day = first.date; return renderDays(); }
       $('#bTimes').innerHTML = '<p class="empty">No quedan huecos en estos días. Prueba con los siguientes →</p>';
+      $('#bWaitLink').hidden = true;
       return;
     }
     $(`#bDays [data-d="${state.day}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -285,9 +305,64 @@
     const morning = slots.filter((s) => s.time < '14:00'), afternoon = slots.filter((s) => s.time >= '14:00');
     const row = (list) => `<div class="row">${list.map((s) => `<button type="button" data-t="${s.time}" aria-pressed="${s.time === state.time}">${s.time}</button>`).join('')}</div>`;
     $('#bTimes').innerHTML = (morning.length ? `<h4>Mañana</h4>${row(morning)}` : '') + (afternoon.length ? `<h4>Tarde</h4>${row(afternoon)}` : '') || '<p class="empty">Ese día ya está completo.</p>';
+    $('#bWaitLink').hidden = !$('#bWait').hidden || waited.has(state.day);
+    showWaitDone();
+    $('#bWaitOpen').textContent = slots.length ? '¿No te viene ninguna hora? Avísame si se libera un hueco este día' : 'Avísame si se libera un hueco este día';
     $$('#bTimes button').forEach((b) => b.onclick = () => { state.time = b.dataset.t; renderTimes(); $('#bNext2').disabled = false; });
     $('#bNext2').disabled = !state.time;
   }
+
+  // ---- Lista de espera del día elegido
+  const waited = new Set();
+  function closeWait() { $('#bWait').hidden = true; showWaitDone(); }
+  function showWaitDone() {
+    const done = waited.has(state.day);
+    $('#bWaitDone').hidden = !done;
+    if (done) { $('#bWaitDone').textContent = `Te avisaremos por correo si se libera un hueco el ${longDate(state.day)}.`; $('#bWaitLink').hidden = true; }
+  }
+  $('#bWaitOpen').onclick = () => {
+    $('#bWait').hidden = false; $('#bWaitLink').hidden = true; $('#bWaitError').hidden = true;
+    $('#bWaitText').innerHTML = `Te apuntamos para el <strong>${longDate(state.day)}</strong>. Si alguien anula su cita ese día, te escribimos al momento para que puedas reservarla.`;
+    const f = $('#bForm'), w = $('#bWait');
+    ['name', 'phone', 'email'].forEach((k) => { if (!w[k].value) w[k].value = f[k].value; });
+    w.name.focus();
+  };
+  $('#bWaitClose').onclick = () => { closeWait(); $('#bWaitLink').hidden = false; };
+  $('#bWait').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const w = e.target, err = $('#bWaitError'), btn = $('#bWaitSend');
+    const failW = (msg, field) => { err.textContent = msg; err.hidden = false; field?.focus(); };
+    const digits = w.phone.value.replace(/\D/g, '');
+    if (w.name.value.trim().length < 2) return failW('Dinos tu nombre, por favor.', w.name);
+    if (!w.phone.value.trim().startsWith('+') && digits.replace(/^34(?=\d{9}$)/, '').length !== 9) return failW('Revisa el teléfono: creo que le falta o le sobra alguna cifra.', w.phone);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(w.email.value.trim())) return failW('Déjanos un correo para poder avisarte.', w.email);
+    if (!w.ok.checked) return failW('Para apuntarte tienes que aceptar la política de privacidad.', w.ok);
+    btn.disabled = true;
+    try {
+      await post({ action: 'waitlist', service_id: state.service, member_id: state.member, day: state.day,
+        name: w.name.value, phone: w.phone.value, email: w.email.value, website: w.website.value });
+      w.hidden = true;
+      waited.add(state.day);
+      showWaitDone();
+    } catch (ex) { failW(ex.message); } finally { btn.disabled = false; }
+  });
+
+  // ---- Cupón
+  let couponOk = null;
+  const couponMsg = (text, bad) => { const m = $('#bCouponMsg'); m.hidden = !text; m.textContent = text || ''; m.classList.toggle('bad', !!bad); };
+  async function checkCoupon() {
+    const f = $('#bForm'), code = f.coupon.value.trim();
+    couponOk = null;
+    if (!code) { couponMsg(''); return true; }
+    try {
+      const r = await post({ action: 'coupon', code, service_id: state.service, phone: f.phone.value });
+      couponOk = r.code;
+      couponMsg(`Código ${r.code} aplicado: ${r.text}${r.discount_eur ? ` (−${euros(r.discount_eur)})` : ''}.`);
+      return true;
+    } catch (ex) { couponMsg(ex.message, true); return false; }
+  }
+  $('#bCouponApply').onclick = checkCoupon;
+  $('#bForm').coupon.addEventListener('input', () => { couponOk = null; couponMsg(''); });
 
   const longDate = (iso) => { const d = new Date(`${iso}T12:00:00`); return `${DAY[d.getDay()]} ${d.getDate()} de ${['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][d.getMonth()]}`; };
   $('#bNext2').onclick = () => {
@@ -305,11 +380,14 @@
     if (f.name.value.trim().length < 2) return fail('Dinos tu nombre, por favor.', f.name);
     if (!f.phone.value.trim().startsWith('+') && phone.replace(/^34(?=\d{9}$)/, '').length !== 9) return fail('Revisa el teléfono: creo que le falta o le sobra alguna cifra.', f.phone);
     if (!f.ok.checked) return fail('Para reservar tienes que aceptar la política de privacidad.', f.ok);
+    if (f.marketing.checked && !f.email.value.trim()) return fail('Para recibir ofertas por correo, déjanos tu correo.', f.email);
+    if (f.coupon.value.trim() && couponOk !== f.coupon.value.trim().toUpperCase() && !(await checkCoupon())) return fail('Revisa el código de descuento o bórralo para seguir.', f.coupon);
     err.hidden = true; btn.disabled = true; btn.textContent = 'Reservando…';
     try {
       const r = await post({
         action: 'book', service_id: state.service, member_id: state.member, date: state.day, time: state.time,
         name: f.name.value, phone: f.phone.value, email: f.email.value, notes: f.notes.value, website: f.website.value,
+        coupon: f.coupon.value.trim(), marketing: f.marketing.checked,
       });
       done(r, f.name.value.trim());
     } catch (ex) {
@@ -320,7 +398,10 @@
 
   function done(r, name) {
     const s = svc();
-    $('#bDone').innerHTML = `${esc(firstName(name))}, tu cita para <strong>${esc(r.service)}</strong>${r.member ? ` con <strong>${esc(r.member)}</strong>` : ''} queda apuntada el <strong>${esc(r.when)}</strong>.<br>Av. San Crispín 72, Fuensalida.`;
+    $('#bDone').innerHTML = `${esc(firstName(name))}, tu cita para <strong>${esc(r.service)}</strong>${r.member ? ` con <strong>${esc(r.member)}</strong>` : ''} queda apuntada el <strong>${esc(r.when)}</strong>.${r.coupon ? `<br>Con tu código: ${esc(r.coupon)}.` : ''}<br>${esc(INFO.settings.address || 'Av. San Crispín 72, Fuensalida')}.`;
+    $('#bDoneNote').textContent = r.email_sent
+      ? 'Te hemos mandado un correo con todo y el día antes te enviamos un recordatorio. Si necesitas cambiarla, escríbenos por WhatsApp.'
+      : 'Guarda el enlace «Ver o anular la cita» por si te surge algo. Si necesitas cambiarla, escríbenos por WhatsApp.';
     const manage = new URL(`cita.html?t=${r.token}`, location.href).href;
     $('#bManage').href = manage;
     // Archivo .ics para añadirla al calendario del móvil
@@ -336,6 +417,6 @@
     $('#bIcs').href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
     go(4);
   }
-  $('#bAgain').onclick = () => { $('#bForm').reset(); $('#bService').value = ''; onService(); go(1); };
+  $('#bAgain').onclick = () => { $('#bForm').reset(); couponOk = null; couponMsg(''); $('#bService').value = ''; onService(); go(1); };
   go(1);
 })();

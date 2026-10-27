@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Darse de baja · Henko</title>
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/site.css?v=2">
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(180deg, var(--cream), var(--blush) 160%); }
+    .card { width: min(100%, 520px); background: #fff; border-radius: 26px; padding: 40px 32px; text-align: center; box-shadow: var(--shadow); }
+    .card .brand { margin-bottom: 26px; }
+  </style>
+</head>
+<body>
+  <main class="card" id="card">
+    <a class="brand" href="./" aria-label="Henko">
+      <span class="brand-sign">Henko</span><span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-words"><span>Hair salon</span><span>Peluquería · Estética</span></span>
+    </a>
+    <p id="status">Un momento…</p>
+  </main>
+  <script src="assets/js/config.js?v=1"></script>
+  <script>
+    (async () => {
+      const status = document.getElementById('status');
+      const token = new URLSearchParams(location.search).get('t') || '';
+      try {
+        const res = await fetch(window.HENKO.reservas, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'unsubscribe', token }) });
+        if (!res.ok) throw new Error();
+        status.innerHTML = '<span class="script">Hecho</span><br>Ya no te mandaremos más ofertas. Los avisos de tus citas te seguirán llegando.<br><br><a class="btn btn-line" href="./">Volver a la web</a>';
+      } catch {
+        status.innerHTML = 'Este enlace no es válido o ya no funciona. Si quieres darte de baja, escríbenos por WhatsApp al 608 857 984 y lo hacemos al momento.<br><br><a class="btn btn-line" href="./">Volver a la web</a>';
+      }
+    })();
+  </script>
+</body>
+</html>
