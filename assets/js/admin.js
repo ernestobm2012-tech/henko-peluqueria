@@ -685,6 +685,26 @@ async function renderNumbers() {
     const sources = [['Web', web], ['Asistente del chat', chat], ['En el salón / teléfono', events.length - web - chat]];
     const msgCount = {}; (msg.data || []).forEach((m) => (msgCount[m.kind] = (msgCount[m.kind] || 0) + 1));
     const coupUsed = events.filter((e) => e.coupon_id).length;
+    // Visitas a la web pública (contador sin cookies); si falla, el resto de números sigue igual.
+    let web2 = '';
+    try {
+      const { data: v, error: ve } = await db.rpc('client_web_stats', { p_client: CID, p_from: from, p_to: to });
+      if (ve || !v || typeof v.people !== 'number') throw ve || new Error('sin datos');
+      const days = (v.daily || []).map((d) => [new Date(`${d.day}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }), d.visits]);
+      const pageName = (p) => ({ '/': 'Portada', '/cita.html': 'Ver o anular una cita', '/privacidad.html': 'Privacidad' }[p] || p);
+      web2 = `<div class="panel"><h2>Visitas a la web</h2>
+        <div class="kpis">
+          <div class="kpi"><b>${v.people}</b>personas distintas<small>${v.visits} páginas vistas</small></div>
+          <div class="kpi"><b>${web ? Math.round((web / Math.max(1, v.people)) * 100) : 0} %</b>acaban reservando<small>${web} reservas en la web</small></div>
+        </div>
+        <div class="cols2">
+          <div><h3 class="muted" style="font-size:.9rem">Visitas por día</h3>${bars(days.slice(-14))}</div>
+          <div><h3 class="muted" style="font-size:.9rem">Páginas más vistas</h3>${bars((v.pages || []).map((p) => [pageName(p.path), p.visits]))}</div>
+          <div><h3 class="muted" style="font-size:.9rem">De dónde llegan</h3>${bars((v.referrers || []).map((r) => [r.ref, r.visits]))}</div>
+          <div><h3 class="muted" style="font-size:.9rem">Desde qué aparato</h3>${bars((v.devices || []).map((d) => [d.device, d.visits]))}</div>
+        </div>
+        <p class="muted" style="margin-top:10px">No cuenta tus propias visitas si abres la web una vez con <b>?notrack=1</b> al final de la dirección.</p></div>`;
+    } catch (e) { web2 = ''; }
     $('#nBody').innerHTML = `
       <div class="kpis">
         <div class="kpi"><b>${done.length}</b>citas hechas<small>${upcoming.length} más por venir</small></div>
@@ -700,6 +720,7 @@ async function renderNumbers() {
         <div class="panel"><h2>Cómo reservan</h2>${bars(sources)}</div>
         <div class="panel"><h2>Correos que han salido</h2>${bars([['Confirmaciones', msgCount.confirm || 0], ['Recordatorios', msgCount.reminder || 0], ['Peticiones de opinión', msgCount.review || 0], ['Te echamos de menos', msgCount.comeback || 0], ['Cumpleaños', msgCount.birthday || 0], ['Huecos liberados', msgCount.waitlist || 0]])}</div>
       </div>
+      ${web2}
       <div class="panel"><h2>Hace más de 8 semanas que no vienen</h2>
         <p class="muted">Un mensaje a tiempo las trae de vuelta. ${asleep.length ? 'Escríbeles desde aquí:' : ''}</p>
         <ul class="history" style="max-height:none">${asleep.map((c) => `<li style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span>${esc(c.name)} <span class="muted">· última vez ${new Date(last[c.id]).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}${c.marketing_ok ? ' · le llega el correo solo' : ''}</span></span>${c.phone ? `<a class="btn line" target="_blank" href="${waLink(c.phone, `¡Hola ${c.name.split(' ')[0]}! Hace tiempo que no te vemos por Henko. ¿Te hacemos un hueco esta semana?`)}">WhatsApp</a>` : ''}</li>`).join('') || '<li class="muted">Nadie, ¡bien!</li>'}</ul>
