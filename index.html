@@ -14,7 +14,7 @@
   <link rel="preload" href="assets/fonts/CormorantGaramond-400-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/Jost-300-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/site.css?v=2">
+  <link rel="stylesheet" href="assets/css/site.css?v=3">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -212,8 +212,28 @@
         <p class="script">Henko</p>
         <h2 data-set="gift_card.title">Tarjeta regalo Henko</h2>
         <p data-set="gift_card.text">¿No sabes qué regalar? Tú eliges la cantidad.</p>
-        <p class="amounts" id="giftAmounts"><span>20 €</span><span>30 €</span><span>40 €</span></p>
-        <a class="btn btn-line light js-wa-gift" href="https://wa.me/34608857984" target="_blank" rel="noopener">Pedirla por WhatsApp</a>
+        <div class="amounts" id="giftAmounts" role="radiogroup" aria-label="Importe">
+          <button type="button" data-a="20" aria-checked="false" role="radio">20 €</button><button type="button" data-a="30" aria-checked="false" role="radio">30 €</button><button type="button" data-a="40" aria-checked="false" role="radio">40 €</button>
+        </div>
+        <p class="gift-how">Resérvala aquí y la pagas en el salón cuando vengas a recogerla.</p>
+        <button type="button" class="btn btn-line light" id="giftOpen">Reservar tarjeta regalo</button>
+        <form class="gift-form" id="giftForm" hidden novalidate>
+          <div class="grid2">
+            <label class="field"><span>Importe (€)</span><input name="amount" type="number" min="10" max="300" step="5" inputmode="numeric" required></label>
+            <label class="field"><span>¿Para quién? <small>(si quieres)</small></span><input name="recipient" maxlength="80" placeholder="Mi madre, Marta…"></label>
+          </div>
+          <label class="field"><span>Un mensaje para la tarjeta <small>(si quieres)</small></span><input name="message" maxlength="300" placeholder="¡Feliz cumpleaños!"></label>
+          <div class="grid2">
+            <label class="field"><span>Tu nombre</span><input name="name" autocomplete="name" maxlength="80" required></label>
+            <label class="field"><span>Tu teléfono</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" required placeholder="600 000 000"></label>
+          </div>
+          <label class="field"><span>Correo <small>(te mandamos el código)</small></span><input name="email" type="email" autocomplete="email" maxlength="120"></label>
+          <label class="hp" aria-hidden="true">Web <input name="website" tabindex="-1" autocomplete="off"></label>
+          <label class="check"><input type="checkbox" name="ok" required> <span>He leído la <a href="privacidad.html" target="_blank">política de privacidad</a>.</span></label>
+          <p class="book-error" id="giftError" role="alert" hidden></p>
+          <div class="book-nav"><button type="button" class="btn btn-ghost" id="giftClose">Cancelar</button><button class="btn btn-solid" id="giftSend">Reservar</button></div>
+        </form>
+        <div class="gift-done" id="giftDone" hidden></div>
       </div>
     </section>
 
@@ -252,7 +272,7 @@
   </div>
 
   <script src="assets/js/config.js?v=1"></script>
-  <script src="assets/js/site.js?v=2" defer></script>
+  <script src="assets/js/site.js?v=3" defer></script>
   <script src="https://ebmagenciaia.es/js/chat.js?v=4" data-client="henko-peluqueria" data-title="Henko" data-color="#684C33" data-privacy="privacidad.html" defer></script>
 </body>
 </html>

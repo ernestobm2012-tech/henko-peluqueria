@@ -472,6 +472,7 @@ const couponText = (k) => k.kind === 'percent' ? `${Number(k.value).toLocaleStri
 const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 $('#kNew').onclick = () => couponModal({ kind: 'percent', value: 10, once_per_customer: true, active: true, service_ids: [] });
 async function renderCoupons() {
+  renderGifts();
   coupons = (await db.from('coupons').select('*').eq('client_id', CID).order('created_at')).data || [];
   const { data: used } = await db.from('calendar_events').select('coupon_id').eq('client_id', CID).not('coupon_id', 'is', null);
   const uses = {}; (used || []).forEach((u) => (uses[u.coupon_id] = (uses[u.coupon_id] || 0) + 1));
@@ -528,6 +529,96 @@ function couponModal(k) {
       if (error) throw error.code === '23505' ? new Error('Ya hay un cupón con ese código.') : error;
     }
     toast('Guardado'); renderCoupons();
+  });
+}
+
+// ---------- Tarjetas regalo (se reservan en la web y se pagan en el salón)
+let gFilter = 'activas', gifts = [];
+const eur2 = (n) => `${Number(n).toLocaleString('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })} €`;
+const GSTATE = { reservada: 'Reservada · falta pagar', pagada: 'Pagada', usada: 'Gastada', anulada: 'Anulada' };
+$$('#gFilter button').forEach((b) => (b.onclick = () => { gFilter = b.dataset.g; $$('#gFilter button').forEach((x) => x.classList.toggle('on', x === b)); drawGifts(); }));
+$('#gNew').onclick = () => giftModal({});
+async function renderGifts() {
+  const { data, error } = await db.from('gift_cards').select('*').eq('client_id', CID).order('created_at', { ascending: false }).limit(500);
+  if (error) return fail(error);
+  gifts = data || [];
+  drawGifts();
+}
+function drawGifts() {
+  const today = isoDay(new Date());
+  const list = gifts.filter((g) => gFilter === 'todas' || g.status === 'reservada' || (g.status === 'pagada' && Number(g.balance) > 0));
+  $('#gList').innerHTML = list.map((g) => {
+    const expired = g.status === 'pagada' && g.expires_at && g.expires_at < today;
+    return `<div class="coupon-card ${g.status === 'reservada' || g.status === 'pagada' ? '' : 'off'}" data-id="${g.id}"><span class="code">${esc(g.code)}</span>
+      <div>${eur2(Number(g.balance))}${Number(g.balance) !== Number(g.amount) ? ` <span class="muted">de ${eur2(Number(g.amount))}</span>` : ''} · ${esc(g.buyer_name)}${g.recipient_name ? ` para ${esc(g.recipient_name)}` : ''}
+      <small>${new Date(g.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}${g.source === 'web' ? ' · reservada en la web' : ''}${g.expires_at ? ` · vale hasta el ${shortDate(g.expires_at)}` : ''}${expired ? ' · caducada' : ''}</small></div>
+      <span class="pill" ${g.status === 'reservada' ? 'style="background:#F6E7C8"' : ''}>${GSTATE[g.status]}</span></div>`;
+  }).join('') || `<p class="muted">${gifts.length ? 'No hay tarjetas pendientes.' : 'Aún no hay tarjetas regalo.'}</p>`;
+  $$('#gList [data-id]').forEach((el) => (el.onclick = () => giftModal(gifts.find((g) => g.id === el.dataset.id))));
+}
+const GIFT_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newGiftCode = () => `HENKO-${[...crypto.getRandomValues(new Uint8Array(5))].map((b) => GIFT_CHARS[b % GIFT_CHARS.length]).join('')}`;
+const inAYear = () => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return isoDay(d); };
+function giftModal(g) {
+  const isNew = !g.id;
+  if (isNew) {
+    openModal(`
+      <h2>Vender una tarjeta regalo</h2>
+      <p class="muted">Para cuando la compran en el salón. Queda como pagada y vale un año.</p>
+      <div class="grid2">
+        <label class="field"><span>Importe (€)</span><input name="amount" type="number" min="5" step="5" required></label>
+        <label class="field"><span>¿Para quién?</span><input name="recipient_name"></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Quién la compra</span><input name="buyer_name" required></label>
+        <label class="field"><span>Su teléfono</span><input name="buyer_phone" inputmode="tel"></label>
+      </div>
+      <label class="field"><span>Mensaje</span><input name="message"></label>
+      <div class="modal-actions"><div class="right"><button class="btn" value="cancel" formnovalidate>Cerrar</button><button class="btn solid" value="save">Guardar</button></div></div>`,
+    async (fd) => {
+      const amount = Number(fd.get('amount'));
+      const row = { client_id: CID, code: newGiftCode(), amount, balance: amount, status: 'pagada', source: 'panel', paid_at: new Date().toISOString(), expires_at: inAYear(),
+        buyer_name: fd.get('buyer_name').trim(), buyer_phone: fd.get('buyer_phone').replace(/[^\d+]/g, '') || null, recipient_name: fd.get('recipient_name').trim() || null, message: fd.get('message').trim() || null };
+      const { error } = await db.from('gift_cards').insert(row);
+      if (error) throw error;
+      toast(`Tarjeta ${row.code} creada`); renderGifts();
+    });
+    return;
+  }
+  const open = g.status === 'reservada' || g.status === 'pagada';
+  openModal(`
+    <h2>Tarjeta ${esc(g.code)} <span class="pill">${GSTATE[g.status]}</span></h2>
+    <p style="font-size:30px;font-family:var(--serif, serif);margin:4px 0 8px">${eur2(Number(g.balance))} <span class="muted" style="font-size:16px">${Number(g.balance) !== Number(g.amount) ? `quedan de ${eur2(Number(g.amount))}` : ''}</span></p>
+    <ul class="history">
+      <li>Compra: ${esc(g.buyer_name)}${g.buyer_phone ? ` · ${esc(phoneFmt(g.buyer_phone))}` : ''}${g.buyer_email ? ` · ${esc(g.buyer_email)}` : ''}</li>
+      ${g.recipient_name ? `<li>Para: ${esc(g.recipient_name)}</li>` : ''}
+      ${g.message ? `<li>Mensaje: «${esc(g.message)}»</li>` : ''}
+      <li>${g.source === 'web' ? 'Reservada en la web' : 'Vendida en el salón'} el ${new Date(g.created_at).toLocaleDateString('es-ES')}${g.paid_at ? ` · pagada el ${new Date(g.paid_at).toLocaleDateString('es-ES')}` : ''}${g.expires_at ? ` · vale hasta el ${shortDate(g.expires_at)}` : ''}</li>
+    </ul>
+    ${g.status === 'pagada' && Number(g.balance) > 0 ? `<label class="field"><span>Descontar lo que se ha gastado (€)</span><input name="spend" type="number" min="0" step="0.5" max="${Number(g.balance)}" placeholder="Ej.: 25"></label>` : ''}
+    <label class="field"><span>Notas</span><input name="notes" value="${esc(g.notes || '')}"></label>
+    <div class="modal-actions">
+      ${open ? '<button class="btn danger" value="void">Anular</button>' : ''}
+      ${g.buyer_phone ? `<a class="btn line" target="_blank" href="${waLink(g.buyer_phone, `¡Hola ${g.buyer_name.split(' ')[0]}! Te escribimos de Henko por tu tarjeta regalo ${g.code}.`)}">WhatsApp</a>` : ''}
+      <div class="right"><button class="btn" value="cancel" formnovalidate>Cerrar</button>
+      ${g.status === 'reservada' ? '<button class="btn solid" value="paid">Ya la ha pagado</button>' : '<button class="btn solid" value="save">Guardar</button>'}</div>
+    </div>`, async (fd, action) => {
+    const patch = { notes: String(fd.get('notes') || '').trim() || null };
+    if (action === 'void') {
+      if (!confirm('¿Anular esta tarjeta regalo?')) return false;
+      patch.status = 'anulada';
+    } else if (action === 'paid') {
+      Object.assign(patch, { status: 'pagada', paid_at: new Date().toISOString(), expires_at: inAYear() });
+    } else if (fd.get('spend')) {
+      const spend = Number(fd.get('spend'));
+      if (!(spend > 0) || spend > Number(g.balance)) throw new Error(`Puedes descontar como mucho ${eur2(Number(g.balance))}.`);
+      patch.balance = Math.round((Number(g.balance) - spend) * 100) / 100;
+      if (patch.balance === 0) patch.status = 'usada';
+    }
+    const { error } = await db.from('gift_cards').update(patch).eq('id', g.id);
+    if (error) throw error;
+    toast(action === 'paid' ? 'Marcada como pagada' : action === 'void' ? 'Tarjeta anulada' : patch.balance !== undefined ? `Quedan ${eur2(patch.balance)}` : 'Guardado');
+    renderGifts();
   });
 }
 

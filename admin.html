@@ -10,7 +10,7 @@
   <link rel="manifest" href="admin.webmanifest">
   <link rel="apple-touch-icon" href="assets/img/icon-192.png">
   <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/admin.css?v=2">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3">
 </head>
 <body>
   <!-- Entrada -->
@@ -33,7 +33,7 @@
         <button data-tab="agenda" class="on">Agenda</button>
         <button data-tab="clientes">Clientes</button>
         <button data-tab="numeros" data-owner>Números</button>
-        <button data-tab="cupones" data-owner>Cupones</button>
+        <button data-tab="cupones">Cupones y regalos</button>
         <button data-tab="servicios" data-owner>Servicios</button>
         <button data-tab="equipo" data-owner>Equipo</button>
         <button data-tab="web" data-owner>Web</button>
@@ -84,10 +84,17 @@
       <section data-view="cupones" hidden>
         <div class="view-head">
           <h1>Cupones de descuento</h1>
-          <button class="btn solid" id="kNew">+ Nuevo cupón</button>
+          <button class="btn solid" id="kNew" data-owner>+ Nuevo cupón</button>
         </div>
         <p class="muted">Tus clientas escriben el código al reservar en la web. Puedes enseñar uno en la portada, ponerlo en los correos de cumpleaños o de «te echamos de menos» (en Ajustes) o darlo tú en mano o por Instagram.</p>
         <div id="kList"></div>
+        <div class="view-head" style="margin-top:34px">
+          <h1>Tarjetas regalo</h1>
+          <button class="btn solid" id="gNew">+ Vender una en el salón</button>
+        </div>
+        <p class="muted">Las que se reservan en la web llegan aquí como «reservada» y te avisa el móvil. Cuando la clienta pase a pagarla, márcala como pagada (desde ese día vale un año). Cuando la usen, descuenta lo gastado.</p>
+        <div class="seg" id="gFilter"><button data-g="activas" class="on">Activas</button><button data-g="todas">Todas</button></div>
+        <div id="gList" style="margin-top:12px"></div>
       </section>
 
       <!-- Servicios -->
@@ -182,6 +189,6 @@
   <div class="toast" id="toast" role="status" hidden></div>
 
   <script src="assets/js/config.js?v=1"></script>
-  <script type="module" src="assets/js/admin.js?v=2"></script>
+  <script type="module" src="assets/js/admin.js?v=3"></script>
 </body>
 </html>

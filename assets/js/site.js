@@ -73,12 +73,14 @@
     if (s.whatsapp) {
       const wa = `https://wa.me/${s.whatsapp}`;
       $$('.js-wa').forEach((a) => a.href = `${wa}?text=${encodeURIComponent('¡Hola! Quería pedir cita en Henko.')}`);
-      $$('.js-wa-gift').forEach((a) => a.href = `${wa}?text=${encodeURIComponent('¡Hola! Me gustaría una tarjeta regalo de Henko.')}`);
     }
     if (s.phone) $$('.js-tel').forEach((a) => { a.href = `tel:+34${s.phone}`; a.textContent = `Llamar al ${s.phone.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}`; });
     if (s.instagram) $$('.js-ig').forEach((a) => a.href = `https://www.instagram.com/${s.instagram}/`);
     if (s.maps_query) $$('.js-map').forEach((a) => a.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.maps_query)}`);
-    if (Array.isArray(s.gift_card?.amounts)) $('#giftAmounts').innerHTML = s.gift_card.amounts.map((n) => `<span>${esc(n)} €</span>`).join('');
+    if (Array.isArray(s.gift_card?.amounts)) {
+      $('#giftAmounts').innerHTML = s.gift_card.amounts.map((n) => `<button type="button" role="radio" aria-checked="false" data-a="${esc(n)}">${esc(n)} €</button>`).join('');
+      bindAmounts();
+    }
     if (Array.isArray(s.hours)) renderHours(s.hours);
     renderOpenNow(s.opening);
   }
@@ -191,6 +193,49 @@
       </article>`).join('');
     if (!INFO.team.length) $('#equipo').hidden = true;
   }
+
+  // ---- Tarjeta regalo: se reserva aquí y se paga en el salón
+  const gf = $('#giftForm');
+  function pickAmount(a) {
+    $$('#giftAmounts button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.a === String(a))));
+    gf.amount.value = a;
+  }
+  function bindAmounts() {
+    $$('#giftAmounts button').forEach((b) => (b.onclick = () => { pickAmount(b.dataset.a); openGift(); }));
+  }
+  function openGift() {
+    gf.hidden = false; $('#giftOpen').hidden = true; $('#giftDone').hidden = true;
+    if (!gf.amount.value) pickAmount($('#giftAmounts button')?.dataset.a || 20);
+    gf.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  bindAmounts();
+  $('#giftOpen').onclick = openGift;
+  $('#giftClose').onclick = () => { gf.hidden = true; $('#giftOpen').hidden = false; };
+  gf.amount.addEventListener('input', () => pickAmount(gf.amount.value));
+  gf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('#giftError'), btn = $('#giftSend');
+    const failG = (msg, field) => { err.textContent = msg; err.hidden = false; field?.focus(); };
+    const digits = gf.phone.value.replace(/\D/g, '');
+    if (!(Number(gf.amount.value) >= 10)) return failG('Elige el importe de la tarjeta.', gf.amount);
+    if (gf.name.value.trim().length < 2) return failG('Dinos tu nombre, por favor.', gf.name);
+    if (!gf.phone.value.trim().startsWith('+') && digits.replace(/^34(?=\d{9}$)/, '').length !== 9) return failG('Revisa el teléfono: creo que le falta o le sobra alguna cifra.', gf.phone);
+    if (!gf.ok.checked) return failG('Tienes que aceptar la política de privacidad.', gf.ok);
+    err.hidden = true; btn.disabled = true;
+    try {
+      const r = await post({ action: 'gift', amount: Number(gf.amount.value), recipient_name: gf.recipient.value, message: gf.message.value,
+        name: gf.name.value, phone: gf.phone.value, email: gf.email.value, website: gf.website.value });
+      gf.hidden = true;
+      const done = $('#giftDone');
+      done.hidden = false;
+      done.innerHTML = `<p class="script" style="font-size:44px;color:var(--cafe)">¡Reservada!</p>
+        <p>Tu tarjeta regalo de <strong>${esc(euros(r.amount))}</strong> te espera en el salón. Pásate cuando quieras a pagarla y te la damos preparada.</p>
+        <span class="code">${esc(r.code)}</span>
+        <p class="small">${r.email_sent ? 'Te hemos mandado el código por correo. ' : 'Apúntate el código o haz una captura. '}Solo tienes que decirnos tu nombre o este código.</p>`;
+      done.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      gf.reset(); pickAmount('');
+    } catch (ex) { failG(ex.message); } finally { btn.disabled = false; }
+  });
 
   // ---- Reserva
   const panes = $$('.book-pane'), steps = $$('.book-steps li');
