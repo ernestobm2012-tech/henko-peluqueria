@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Tu cita · Henko</title>
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/site.css?v=1">
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(180deg, var(--cream), var(--blush) 160%); }
+    .card { width: min(100%, 520px); background: #fff; border-radius: 26px; padding: 40px 32px; text-align: center; box-shadow: var(--shadow); }
+    .card .brand { margin-bottom: 26px; }
+    .when { font: 400 30px/1.25 var(--serif); color: var(--ink); margin: 6px 0 4px; }
+    .what { color: var(--soft); margin-bottom: 26px; }
+    .actions { justify-content: center; }
+    .msg { margin-top: 18px; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <main class="card" id="card">
+    <a class="brand" href="./" aria-label="Henko">
+      <span class="brand-sign">Henko</span><span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-words"><span>Hair salon</span><span>Peluquería · Estética</span></span>
+    </a>
+    <p class="small" id="status">Buscando tu cita…</p>
+  </main>
+  <script src="assets/js/config.js?v=1"></script>
+  <script>
+    (async () => {
+      const H = window.HENKO, card = document.getElementById('card'), status = document.getElementById('status');
+      const token = new URLSearchParams(location.search).get('t') || '';
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const call = async (action) => {
+        const res = await fetch(H.reservas, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, token }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'No se ha podido completar.');
+        return data;
+      };
+      const wa = 'https://wa.me/34608857984?text=' + encodeURIComponent('¡Hola! Quería cambiar mi cita en Henko.');
+      try {
+        const c = await call('booking');
+        status.remove();
+        card.insertAdjacentHTML('beforeend', `
+          <p class="eyebrow">${c.past ? 'Tu cita fue' : 'Tu cita'}</p>
+          <p class="when">${esc(c.when.charAt(0).toUpperCase() + c.when.slice(1))}</p>
+          <p class="what">${esc(c.service)}${c.member ? ` · con ${esc(c.member)}` : ''}<br>Av. San Crispín 72, Fuensalida</p>
+          <div class="actions">
+            ${c.can_cancel ? '<button class="btn btn-line" id="cancel">Anular la cita</button>' : ''}
+            <a class="btn btn-solid" href="${wa}" target="_blank" rel="noopener">Cambiarla por WhatsApp</a>
+          </div>
+          ${!c.can_cancel && !c.past ? `<p class="msg small">Queda poco para la cita: para anularla, llámanos al 608 857 984.</p>` : ''}
+          <p class="msg" id="msg" role="status"></p>`);
+        const btn = document.getElementById('cancel');
+        if (btn) btn.onclick = async () => {
+          if (!confirm('¿Seguro que quieres anular la cita?')) return;
+          btn.disabled = true;
+          try {
+            await call('cancel');
+            card.querySelector('.actions').remove();
+            document.getElementById('msg').innerHTML = '<span class="script">Cita anulada</span><br>Gracias por avisarnos. Cuando quieras, <a href="./#reservar">reserva otra</a>.';
+          } catch (e) { btn.disabled = false; document.getElementById('msg').textContent = e.message; }
+        };
+      } catch (e) {
+        status.innerHTML = `${esc(e.message)}<br><br><a class="btn btn-solid" href="./#reservar">Reservar una cita</a>`;
+      }
+    })();
+  </script>
+</body>
+</html>

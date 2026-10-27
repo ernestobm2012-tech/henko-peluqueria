@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#242424">
+  <title>Henko · Panel del salón</title>
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="admin.webmanifest">
+  <link rel="apple-touch-icon" href="assets/img/icon-192.png">
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/admin.css?v=1">
+</head>
+<body>
+  <!-- Entrada -->
+  <section class="login" id="login" hidden>
+    <form class="login-card" id="loginForm">
+      <div class="brand"><span class="brand-sign">Henko</span><span class="brand-rule"></span><span class="brand-words"><span>Hair salon</span><span>Panel del salón</span></span></div>
+      <label class="field"><span>Correo</span><input name="email" type="email" autocomplete="username" required></label>
+      <label class="field"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="error" id="loginError" hidden></p>
+      <button class="btn solid wide">Entrar</button>
+      <p class="hint">¿No tienes acceso o has olvidado la contraseña? Pídeselo a quien te montó la web.</p>
+    </form>
+  </section>
+
+  <!-- Panel -->
+  <div class="app" id="app" hidden>
+    <header class="bar">
+      <div class="brand small"><span class="brand-sign">Henko</span><span class="brand-rule"></span><span class="brand-words"><span>Panel</span><span id="who"></span></span></div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="agenda" class="on">Agenda</button>
+        <button data-tab="clientes">Clientes</button>
+        <button data-tab="servicios" data-owner>Servicios</button>
+        <button data-tab="equipo" data-owner>Equipo</button>
+        <button data-tab="web" data-owner>Web</button>
+        <button data-tab="ajustes">Ajustes</button>
+      </nav>
+      <div class="bar-end"><a class="ghost" href="./" target="_blank">Ver web</a><button class="ghost" id="logout">Salir</button></div>
+    </header>
+
+    <main class="views">
+      <!-- Agenda -->
+      <section data-view="agenda">
+        <div class="agenda-head">
+          <div class="daynav">
+            <button class="round" id="dPrev" aria-label="Día anterior">‹</button>
+            <button class="btn line" id="dToday">Hoy</button>
+            <button class="round" id="dNext" aria-label="Día siguiente">›</button>
+            <label class="datepick"><span id="dLabel"></span><input type="date" id="dPick" aria-label="Elegir día"></label>
+          </div>
+          <div class="seg" id="aMode"><button data-mode="dia" class="on">Día</button><button data-mode="lista">Próximos días</button></div>
+          <button class="btn solid" id="aNew">+ Nueva cita</button>
+        </div>
+        <div class="stats" id="aStats"></div>
+        <div class="agenda" id="agenda"></div>
+        <div class="list" id="agendaList" hidden></div>
+      </section>
+
+      <!-- Clientes -->
+      <section data-view="clientes" hidden>
+        <div class="view-head">
+          <h1>Clientes</h1>
+          <input class="search" id="cSearch" type="search" placeholder="Buscar por nombre o teléfono">
+          <button class="btn solid" id="cNew">+ Nueva clienta</button>
+        </div>
+        <div class="table" id="cList"></div>
+      </section>
+
+      <!-- Servicios -->
+      <section data-view="servicios" hidden>
+        <div class="view-head">
+          <h1>Servicios y precios</h1>
+          <button class="btn solid" id="sNew">+ Nuevo servicio</button>
+        </div>
+        <p class="muted">Lo que pongas aquí sale en la web al momento. Si un servicio no tiene precio, en la web no se muestra ninguno.</p>
+        <div id="sList"></div>
+      </section>
+
+      <!-- Equipo -->
+      <section data-view="equipo" hidden>
+        <div class="view-head">
+          <h1>Equipo y horarios</h1>
+          <button class="btn solid" id="tNew">+ Añadir persona</button>
+        </div>
+        <p class="muted">Cada persona tiene su propia agenda y su horario. En la web solo se ofrecen horas dentro de ese horario y que estén libres.</p>
+        <div class="cards" id="tList"></div>
+      </section>
+
+      <!-- Web -->
+      <section data-view="web" hidden>
+        <div class="view-head"><h1>Tu web</h1><a class="btn line" href="./" target="_blank">Abrir la web</a></div>
+        <div class="seg" id="wMode"><button data-w="fotos" class="on">Fotos</button><button data-w="videos">Vídeos</button><button data-w="textos">Textos y datos</button></div>
+        <div data-w-pane="fotos">
+          <div class="upload">
+            <label class="btn solid">Subir fotos<input type="file" id="wFiles" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+            <span class="muted">Se ven en «Trabajos». Puedes ponerles título y tipo, ordenarlas u ocultarlas.</span>
+          </div>
+          <div class="photos" id="wPhotos"></div>
+        </div>
+        <div data-w-pane="videos" hidden>
+          <form class="inline" id="wVideoForm">
+            <input name="url" placeholder="Enlace de YouTube (https://youtu.be/…)" required>
+            <input name="title" placeholder="Título (opcional)">
+            <button class="btn solid">Añadir vídeo</button>
+          </form>
+          <div class="photos" id="wVideos"></div>
+        </div>
+        <form data-w-pane="textos" id="wTexts" hidden></form>
+      </section>
+
+      <!-- Ajustes -->
+      <section data-view="ajustes" hidden>
+        <div class="view-head"><h1>Ajustes</h1></div>
+        <div class="panel">
+          <h2>Avisos en este móvil</h2>
+          <p class="muted">Te llega un aviso cada vez que alguien reserva o anula una cita desde la web. En iPhone, primero añade el panel a la pantalla de inicio (Compartir → «Añadir a pantalla de inicio») y ábrelo desde ahí.</p>
+          <button class="btn solid" id="pushOn">Activar avisos</button>
+          <p class="muted" id="pushState"></p>
+        </div>
+        <div class="panel" data-owner>
+          <h2>Reservas desde la web</h2>
+          <form id="bookSettings" class="grid2">
+            <label class="field"><span>Se puede reservar hasta (días)</span><input name="booking_days_ahead" type="number" min="7" max="180"></label>
+            <label class="field"><span>Se puede anular hasta (horas antes)</span><input name="cancel_hours" type="number" min="0" max="72"></label>
+            <button class="btn solid">Guardar</button>
+          </form>
+        </div>
+        <div class="panel">
+          <h2>Instalar el panel</h2>
+          <p class="muted">Añade este panel a la pantalla de inicio de tu móvil y se abrirá como una aplicación.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="modal" id="modal"><form method="dialog" class="modal-card" id="modalCard"></form></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="assets/js/config.js?v=1"></script>
+  <script type="module" src="assets/js/admin.js?v=1"></script>
+</body>
+</html>
